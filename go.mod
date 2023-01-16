@@ -2,9 +2,11 @@ module github.com/StirlingMarketingGroup/swoof
 
 go 1.18
 
+replace github.com/StirlingMarketingGroup/cool-mysql => ../go/src/github.com/StirlingMarketingGroup/cool-mysql
+
 require (
-	github.com/Ompluscator/dynamic-struct v1.3.0
 	github.com/StirlingMarketingGroup/cool-mysql v0.0.0-20230112165729-14905291d35e
+	github.com/davecgh/go-spew v1.1.1
 	github.com/dustin/go-humanize v1.0.0
 	github.com/fatih/color v1.13.0
 	github.com/go-sql-driver/mysql v1.7.0

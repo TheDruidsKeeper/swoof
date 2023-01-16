@@ -2,7 +2,7 @@ package main
 
 import (
 	"fmt"
-	"io/ioutil"
+	"os"
 
 	cool "github.com/StirlingMarketingGroup/cool-mysql"
 	"gopkg.in/yaml.v2"
@@ -13,7 +13,7 @@ import (
 // set by the configuation
 func getTables(file string, args *[]string, src *cool.Database) (*[]string, error) {
 	var tables map[string][]string
-	y, err := ioutil.ReadFile(file)
+	y, err := os.ReadFile(file)
 	if err != nil {
 		fmt.Printf("failed to read aliases file\ndefault location for config is %s/swoof/connections.yaml\n", confDir)
 	} else {

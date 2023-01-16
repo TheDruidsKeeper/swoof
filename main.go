@@ -1,16 +1,12 @@
 package main
 
 import (
-	"encoding/json"
 	"fmt"
 	"os"
-	"reflect"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
 
-	dynamicstruct "github.com/Ompluscator/dynamic-struct"
 	mysql "github.com/StirlingMarketingGroup/cool-mysql"
 	"github.com/dustin/go-humanize/english"
 	"github.com/fatih/color"
@@ -75,6 +71,11 @@ func main() {
 				panic(errors.Errorf("can't use %q as a source per your config", sourceDSN))
 			}
 
+			if c.Params == nil {
+				c.Params = make(map[string]string)
+			}
+			c.Params["parseTime"] = "true"
+
 			sourceDSN = connectionToDSN(c)
 		}
 
@@ -82,6 +83,11 @@ func main() {
 			if c.SourceOnly {
 				panic(errors.Errorf("can't use %q as a destination per your config", destDSN))
 			}
+
+			if c.Params == nil {
+				c.Params = make(map[string]string)
+			}
+			c.Params["parseTime"] = "true"
 
 			destDSN = connectionToDSN(c)
 		}
@@ -153,14 +159,12 @@ func main() {
 			columns := make(chan struct {
 				ColumnName           string `mysql:"COLUMN_NAME"`
 				Position             int    `mysql:"ORDINAL_POSITION"`
-				DataType             string `mysql:"DATA_TYPE"`
-				ColumnType           string `mysql:"COLUMN_TYPE"`
 				GenerationExpression string `mysql:"GENERATION_EXPRESSION"`
 			})
 
 			// we need to check to see if the db supports generated columns
 			// if it doesn't, our query to get column info will fail
-			columnInfoCols := "`COLUMN_NAME`,`ORDINAL_POSITION`,`DATA_TYPE`,`COLUMN_TYPE`"
+			columnInfoCols := "`COLUMN_NAME`,`ORDINAL_POSITION`"
 			ok, err := src.Exists("select 0 "+
 				"from`information_schema`.`columns`"+
 				"where`TABLE_SCHEMA`='INFORMATION_SCHEMA'"+
@@ -187,10 +191,6 @@ func main() {
 				}
 			}()
 
-			// this is our dynamic struct of the actual row, which will have
-			// properties added to it for each column in the following loop
-			rowStruct := dynamicstruct.NewStruct()
-
 			// this is our string builder for quoted column names,
 			// which will be used in our select statement
 			columnsQuotedBld := new(strings.Builder)
@@ -216,83 +216,10 @@ func main() {
 				columnsQuotedBld.WriteString(c.ColumnName)
 				columnsQuotedBld.WriteByte('`')
 
-				// column type will end with "unsigned" if the unsigned flag is set for
-				// this column, used for unsigned integers
-				unsigned := strings.HasSuffix(c.ColumnType, "unsigned")
-
-				// these are our struct fields, which all look like "F0", "F1", etc
-				f := "F" + strconv.Itoa(c.Position)
-
-				// create the tag for the field with the exact column name so that
-				// cool mysql insert func knows how to map the row values
-				tag := `mysql:"` + c.ColumnName + `"`
-
-				var v interface{}
-
-				// the switch through data types (differnet than column types, doesn't include lengths)
-				// to determine the type of our struct field
-				// All of the field types are pointers so that our mysql scanning
-				// handles null values gracefully
-				switch c.DataType {
-				case "tinyint":
-					if unsigned {
-						v = new(uint8)
-					} else {
-						v = new(int8)
-					}
-				case "smallint":
-					if unsigned {
-						v = new(uint16)
-					} else {
-						v = new(int16)
-					}
-				case "int", "mediumint":
-					if unsigned {
-						v = new(uint32)
-					} else {
-						v = new(int32)
-					}
-				case "bigint":
-					if unsigned {
-						v = new(uint64)
-					} else {
-						v = new(int64)
-					}
-				case "float":
-					v = new(float64)
-				case "decimal", "double":
-					// our cool mysql literal is exactly what it sounds like;
-					// passed directly into the query with no escaping, which is know is
-					// safe here because a decimal from mysql can't contain breaking characters
-					v = new(mysql.Raw)
-				case "timestamp", "date", "datetime":
-					v = new(string)
-				case "binary", "varbinary", "blob", "tinyblob", "mediumblob", "longblob":
-					v = new([]byte)
-				case "char", "varchar", "text", "tinytext", "mediumtext", "longtext", "enum":
-					v = new(string)
-				case "json":
-					// the json type here is important, because mysql needs
-					// char set info for json columns, since json is supposed to be utf8,
-					// and go treats this is bytes for some reason. mysql.JSON lets cool mysql
-					// know to surround the inlined value with charset info
-					v = new(json.RawMessage)
-				case "set":
-					v = new(any)
-				default:
-					panic(errors.Errorf("unknown mysql column of type %q", c.ColumnType))
-				}
-
-				rowStruct.AddField(f, v, tag)
-
 				i++
 			}
 
-			// this gets the "type" of our struct from our dynamic struct
-			structType := reflect.Indirect(reflect.ValueOf(rowStruct.Build().New())).Type()
-			// and then we make a channel with reflection for our new type of struct
-			chRef := reflect.MakeChan(reflect.ChanOf(reflect.BothDir, structType), *rowBufferSize)
-			ch := chRef.Interface()
+			ch := make(chan mysql.SliceRow, *rowBufferSize)
 
 			columnsQuoted := columnsQuotedBld.String()
 
@@ -301,8 +228,7 @@ func main() {
 			// all into memory or something first, which makes this code dramatically simpler
 			// and should work with tables of all sizes
 			go func() {
-				defer chRef.Close()
-
+				defer close(ch)
 				err = src.Select(ch, "select /*+ MAX_EXECUTION_TIME(2147483647) */ "+columnsQuoted+"from`"+tableName+"`", 0)
 				if err != nil {
 					panic(err)
@@ -347,9 +273,7 @@ func main() {
 				panic(err)
 			}
 
-			var count struct {
-				Count int64
-			}
+			var count int64
 			if !*skipData {
 				// and get the count, so we can show are swick progress bars
 				err = src.Select(&count, "select count(*)`Count`from`"+tableName+"`", 0)
@@ -411,7 +335,7 @@ func main() {
 
 			// our pretty bar config for the progress bars
 			// their documention lives over here https://github.com/vbauerster/mpb
-			bar := pb.AddBar(count.Count,
+			bar := pb.AddBar(count,
 				mpb.BarStyle("|▇▇ |"),
 				mpb.PrependDecorators(
 					decor.Name(color.HiBlueString(tableName)),
@@ -429,10 +353,10 @@ func main() {
 				// Now this *does* have to be chunked because there's no way to stream
 				// rows to mysql, but cool mysql handles this for us, all it needs is the same
 				// channel we got from the select
-				err = dst.I().SetAfterChunkExec(func(start time.Time) {
+				err = dst.I().SetAfterRowExec(func(start time.Time) {
 					bar.Increment()
 					bar.DecoratorEwmaUpdate(time.Since(start))
-				}).Insert("insert into`"+tempTableName+"`", ch)
+				}).Insert("insert into`"+tempTableName+"`("+columnsQuoted+")", ch)
 				if err != nil {
 					panic(err)
 				}

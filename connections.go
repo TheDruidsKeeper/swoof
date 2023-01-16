@@ -1,8 +1,8 @@
 package main
 
 import (
-	"io/ioutil"
 	"net/url"
+	"os"
 
 	cool "github.com/StirlingMarketingGroup/cool-mysql"
 	"github.com/go-sql-driver/mysql"
@@ -26,7 +26,7 @@ type connection struct {
 // makes calls to swoof much shorter and much easier
 // and even a little safer potentially
 func getConnections(file string) (connections map[string]connection, err error) {
-	y, err := ioutil.ReadFile(file)
+	y, err := os.ReadFile(file)
 	if err != nil {
 		return nil, err
 	}

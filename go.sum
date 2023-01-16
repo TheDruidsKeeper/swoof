@@ -1,5 +1,3 @@
-github.com/Ompluscator/dynamic-struct v1.3.0 h1:Ozvw+T2UOmV/2J2/L7tPZxrypKen3CGSBwmWj8pwC4Q=
-github.com/Ompluscator/dynamic-struct v1.3.0/go.mod h1:01g22H1GC9IFcrpQ4JQBkzynp8RoT0wmUMx/OvXNnw8=
 github.com/StirlingMarketingGroup/cool-mysql v0.0.0-20230112165729-14905291d35e h1:iqpdWMWvK+EjHBFD9Uf7LSTNWgSAMuRpl/uLN1mSwHo=
 github.com/StirlingMarketingGroup/cool-mysql v0.0.0-20230112165729-14905291d35e/go.mod h1:Xu7kAg3gCxb9Y2uy6OD+/Hf4mFR0ZvdpUilD/qNeju8=
 github.com/VividCortex/ewma v1.1.1/go.mod h1:2Tkkvm3sRDVXaiyucHiACn4cqf7DpdyLvmxzcbUokwA=
